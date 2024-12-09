@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escáner de Números</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        #video {
+            width: 100%;
+            max-width: 640px;
+            margin: 20px 0;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        
+        button:disabled {
+            background-color: #ccc;
+        }
+        
+        #scannedNumbers {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Escáner de Números</h1>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div>
+        <button id="startBtn">Iniciar Cámara</button>
+        <button id="captureBtn" disabled>Capturar</button>
+    </div>
+    <div id="scannedNumbers">
+        <h3>Números Escaneados:</h3>
+        <div id="numbersList"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startBtn = document.getElementById('startBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const numbersList = document.getElementById('numbersList');
+        const ctx = canvas.getContext('2d');
+        let stream = null;
+
+        // Verificar si estamos en HTTPS o localhost
+        function isSecureContext() {
+            return window.location.protocol === 'https:' || 
+                   window.location.hostname === 'localhost' || 
+                   window.location.hostname === '127.0.0.1';
+        }
+
+        // Verificar y solicitar permisos de cámara
+        async function checkAndRequestPermissions() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Tu navegador no soporta el acceso a la cámara');
+                }
+
+                if (!isSecureContext()) {
+                    throw new Error('Esta página debe ser servida a través de HTTPS o localhost para acceder a la cámara. No puedes abrir el archivo directamente.');
+                }
+
+                // Verificar permisos existentes
+                const result = await navigator.permissions.query({ name: 'camera' });
+                if (result.state === 'denied') {
+                    throw new Error('Permiso de cámara denegado. Por favor, habilita el acceso a la cámara en la configuración de tu navegador.');
+                }
+
+                return true;
+            } catch (error) {
+                alert(error.message);
+                return false;
+            }
+        }
+
+        // Iniciar la cámara
+        startBtn.addEventListener('click', async () => {
+            if (!await checkAndRequestPermissions()) {
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                video.srcObject = stream;
+                startBtn.disabled = true;
+                captureBtn.disabled = false;
+            } catch (err) {
+                let errorMsg = 'Error al acceder a la cámara: ';
+                if (err.name === 'NotAllowedError') {
+                    errorMsg += 'Permiso denegado. Verifica los permisos en la configuración de tu navegador.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMsg += 'No se encontró ninguna cámara.';
+                } else {
+                    errorMsg += err.message;
+                }
+                alert(errorMsg);
+            }
+        });
+
+        // Capturar y procesar imagen
+        captureBtn.addEventListener('click', async () => {
+            if (!stream) return;
+
+            // Configurar canvas al tamaño del video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Capturar frame del video
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            try {
+                // Procesar imagen con Tesseract.js
+                const result = await Tesseract.recognize(canvas, 'eng', {
+                    logger: m => console.log(m)
+                });
+
+                // Buscar números en el texto reconocido
+                const numbers = result.data.text.match(/\d+/g);
+                
+                if (numbers && numbers.length > 0) {
+                    // Mostrar números encontrados
+                    const newNumber = document.createElement('p');
+                    newNumber.textContent = `Números detectados: ${numbers.join(', ')}`;
+                    numbersList.insertBefore(newNumber, numbersList.firstChild);
+                    
+                    // Mostrar alerta
+                    alert(`Números escaneados: ${numbers.join(', ')}`);
+                } else {
+                    alert('No se detectaron números en la imagen');
+                }
+            } catch (err) {
+                alert('Error al procesar la imagen: ' + err.message);
+            }
+        });
+
+        // Limpiar recursos cuando se cierra la página
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
