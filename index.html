@@ -141,24 +141,50 @@
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             try {
+                // Preprocesar la imagen para mejorar el reconocimiento
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Aumentar contraste y convertir a escala de grises
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    const value = avg > 127 ? 255 : 0; // Binarización
+                    data[i] = data[i + 1] = data[i + 2] = value;
+                }
+                ctx.putImageData(imageData, 0, 0);
+
                 // Procesar imagen con Tesseract.js
                 const result = await Tesseract.recognize(canvas, 'eng', {
-                    logger: m => console.log(m)
+                    logger: m => console.log(m),
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+                    tessedit_pageseg_mode: '7', // Trata la imagen como una línea de texto
                 });
 
-                // Buscar números en el texto reconocido
-                const numbers = result.data.text.match(/\d+/g);
+                // Limpiar y formatear el texto reconocido
+                let text = result.data.text.replace(/[^A-Z0-9]/g, '');
                 
-                if (numbers && numbers.length > 0) {
-                    // Mostrar números encontrados
+                // Verificar si coincide con el formato de patente chilena
+                // BBBB•NN o BB•BB•NN
+                const patenteRegex = /^[A-Z]{2,4}\d{2}$/;
+                
+                if (patenteRegex.test(text)) {
+                    // Formatear la patente
+                    if (text.length === 6) {
+                        text = `${text.slice(0, 4)}•${text.slice(4)}`; // BBBB•NN
+                    } else if (text.length === 4) {
+                        text = `${text.slice(0, 2)}•${text.slice(2)}`; // BB•NN
+                    }
+                    
+                    // Mostrar patente encontrada
                     const newNumber = document.createElement('p');
-                    newNumber.textContent = `Números detectados: ${numbers.join(', ')}`;
+                    newNumber.textContent = `Patente detectada: ${text}`;
                     numbersList.insertBefore(newNumber, numbersList.firstChild);
                     
                     // Mostrar alerta
-                    alert(`Números escaneados: ${numbers.join(', ')}`);
+                    alert(`Patente detectada: ${text}`);
                 } else {
-                    alert('No se detectaron números en la imagen');
+                    alert('No se detectó una patente válida. Intente de nuevo.');
                 }
             } catch (err) {
                 alert('Error al procesar la imagen: ' + err.message);
